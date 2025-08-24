@@ -101,7 +101,35 @@ function App() {
       
       let text = textInput
       if (selectedFile) {
-        text = await selectedFile.text()
+        try {
+          // Handle different file types
+          if (selectedFile.type === 'application/pdf') {
+            // For PDFs, you might want to use a PDF parsing library
+            // For now, we'll show a message about PDF support
+            setError('PDF files are supported but require additional processing. Please convert to text or use a different format.')
+            return
+          } else if (selectedFile.type.includes('spreadsheet') || selectedFile.name.match(/\.(xls|xlsx|ods)$/i)) {
+            // For spreadsheets, extract text content
+            text = await selectedFile.text()
+            // You might want to add logic to parse CSV/Excel content
+          } else if (selectedFile.type.includes('presentation') || selectedFile.name.match(/\.(ppt|pptx|odp)$/i)) {
+            // For presentations, extract text content
+            text = await selectedFile.text()
+            // You might want to add logic to parse presentation content
+          } else {
+            // For text-based files (doc, docx, txt, md, etc.)
+            text = await selectedFile.text()
+          }
+          
+          if (!text.trim()) {
+            setError('The uploaded file appears to be empty or could not be read')
+            return
+          }
+        } catch (fileError) {
+          console.error('File reading error:', fileError)
+          setError('Failed to read the uploaded file. Please try a different file or convert to text format.')
+          return
+        }
       }
 
       const response = await axios.post(`${API_BASE}/summaries/generate`, {
@@ -222,16 +250,54 @@ function App() {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setError('File size must be less than 5MB')
+      // Check file size (10MB limit for larger documents)
+      if (file.size > 10 * 1024 * 1024) {
+        setError('File size must be less than 10MB')
         return
       }
-      if (!file.type.includes('text')) {
-        setError('Please upload a text file')
+      
+      // Enhanced file type validation
+      const allowedTypes = [
+        // Text files
+        'text/plain',
+        'text/markdown',
+        'text/csv',
+        'text/html',
+        
+        // Microsoft Office documents
+        'application/msword', // .doc
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+        'application/vnd.ms-excel', // .xls
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-powerpoint', // .ppt
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+        
+        // PDF files
+        'application/pdf',
+        
+        // Rich text
+        'application/rtf',
+        'text/rtf',
+        
+        // OpenDocument formats
+        'application/vnd.oasis.opendocument.text', // .odt
+        'application/vnd.oasis.opendocument.spreadsheet', // .ods
+        'application/vnd.oasis.opendocument.presentation' // .odp
+      ]
+      
+      // Check if file type is allowed or if it has an allowed extension
+      const hasAllowedType = allowedTypes.includes(file.type)
+      const hasAllowedExtension = /\.(txt|md|csv|html|doc|docx|xls|xlsx|ppt|pptx|pdf|rtf|odt|ods|odp)$/i.test(file.name)
+      
+      if (!hasAllowedType && !hasAllowedExtension) {
+        setError('Please upload a supported file type: TXT, MD, CSV, HTML, DOC, DOCX, XLS, XLSX, PPT, PPTX, PDF, RTF, ODT, ODS, ODP')
         return
       }
+      
       setSelectedFile(file)
       setError(null)
+      setSuccess(`📁 File "${file.name}" uploaded successfully!`)
+      setTimeout(() => setSuccess(null), 3000)
     }
   }
 
@@ -382,7 +448,7 @@ function App() {
                     <div className="relative">
                       <input
                         type="file"
-                        accept=".txt,.md,.doc,.docx"
+                        accept=".txt,.md,.csv,.html,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,.rtf,.odt,.ods,.odp"
                         onChange={handleFileUpload}
                         id="file-upload"
                         className="hidden"
@@ -396,7 +462,7 @@ function App() {
                           <p className="text-xs sm:text-sm font-medium text-slate-300 group-hover:text-amber-300">
                             {selectedFile ? selectedFile.name : 'Click to upload or drag and drop'}
                           </p>
-                          <p className="text-xs text-slate-500 mt-1">TXT, MD, DOC files up to 5MB</p>
+                          <p className="text-xs text-slate-500 mt-1">TXT, MD, CSV, HTML, DOC, DOCX, XLS, XLSX, PPT, PPTX, PDF, RTF, ODT, ODS, ODP files up to 10MB</p>
                         </div>
                       </label>
                       {selectedFile && (
