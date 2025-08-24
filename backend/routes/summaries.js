@@ -1,5 +1,4 @@
 const express = require('express');
-const multer = require('multer');
 const { Groq } = require('groq-sdk');
 const db = require('../database');
 
@@ -10,20 +9,7 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
-// File upload middleware
-const upload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'text/plain' || file.mimetype === 'application/txt') {
-      cb(null, true);
-    } else {
-      cb(new Error('Only text files are allowed'), false);
-    }
-  },
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
-  }
-});
+
 
 // Generate summary from text and custom prompt
 router.post('/generate', async (req, res) => {
@@ -114,6 +100,8 @@ Please provide a well-structured, professional summary that addresses the user's
     });
   }
 });
+
+
 
 // Update summary (for editing)
 router.put('/:id', async (req, res) => {

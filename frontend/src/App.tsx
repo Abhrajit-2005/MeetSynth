@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
 import { 
-  FileText, 
+FileText, 
   Send, 
   Edit3, 
   Trash2, 
-  Upload, 
-  Download, 
   Mail, 
   Plus, 
   Search,
@@ -55,7 +53,6 @@ function App() {
   // Form states
   const [textInput, setTextInput] = useState('')
   const [customPrompt, setCustomPrompt] = useState('Summarize this meeting in clear, actionable bullet points')
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   
   // Email states
   const [showEmailModal, setShowEmailModal] = useState(false)
@@ -89,9 +86,77 @@ function App() {
     }
   }
 
-  const generateSummary = async () => {
-    if (!textInput.trim() && !selectedFile) {
-      setError('Please enter text or upload a file')
+  // Function to detect document type and suggest appropriate prompts
+  const detectDocumentType = (text: string): 'resume' | 'meeting' | 'general' => {
+    const resumeKeywords = [
+      'experience', 'skills', 'education', 'work history', 'employment',
+      'resume', 'cv', 'curriculum vitae', 'professional summary',
+      'technical skills', 'soft skills', 'certifications', 'achievements',
+      'responsibilities', 'duties', 'projects', 'technologies'
+    ];
+    
+    const meetingKeywords = [
+      'meeting', 'agenda', 'discussion', 'participants', 'minutes',
+      'transcript', 'conversation', 'call', 'presentation', 'workshop',
+      'brainstorming', 'planning', 'review', 'feedback', 'decisions'
+    ];
+    
+    const textLower = text.toLowerCase();
+    const resumeScore = resumeKeywords.filter(keyword => textLower.includes(keyword)).length;
+    const meetingScore = meetingKeywords.filter(keyword => textLower.includes(keyword)).length;
+    
+    if (resumeScore > meetingScore && resumeScore >= 3) return 'resume';
+    if (meetingScore > resumeScore && meetingScore >= 3) return 'meeting';
+    return 'general';
+  };
+
+  // Function to get appropriate prompt based on document type
+  const getAppropriatePrompt = (docType: 'resume' | 'meeting' | 'general', customPrompt: string): string => {
+    if (docType === 'resume') {
+      return `Analyze this resume and provide a comprehensive professional summary. Include:
+
+• Key skills and technical competencies
+• Relevant work experience and achievements
+• Education and certifications
+• Notable projects and contributions
+• Professional strengths and areas of expertise
+
+Format as a well-structured professional summary suitable for job applications or professional networking.`;
+    } else if (docType === 'meeting') {
+      return customPrompt || 'Summarize this meeting in clear, actionable bullet points';
+    } else {
+      return customPrompt || 'Provide a comprehensive summary of this document';
+    }
+  };
+
+  // Function to truncate text to reasonable length for API
+  const truncateTextForAPI = (text: string, maxChars: number = 8000): string => {
+    if (text.length <= maxChars) return text;
+    
+    // Try to truncate at sentence boundaries
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
+    let truncated = '';
+    
+    for (const sentence of sentences) {
+      if ((truncated + sentence).length > maxChars) break;
+      truncated += sentence;
+    }
+    
+    // If no sentences fit, truncate at word boundaries
+    if (!truncated) {
+      const words = text.split(' ');
+      for (const word of words) {
+        if ((truncated + ' ' + word).length > maxChars) break;
+        truncated += (truncated ? ' ' : '') + word;
+      }
+    }
+    
+    return truncated + (text.length > maxChars ? '\n\n[Document truncated due to length. Consider breaking into smaller sections.]' : '');
+  };
+
+    const generateSummary = async () => {
+    if (!textInput.trim()) {
+      setError('Please enter text to summarize')
       return
     }
 
@@ -99,47 +164,45 @@ function App() {
       setLoading(true)
       setError(null)
       
-      let text = textInput
-      if (selectedFile) {
-        try {
-          // Handle different file types
-          if (selectedFile.type === 'application/pdf') {
-            // For PDFs, you might want to use a PDF parsing library
-            // For now, we'll show a message about PDF support
-            setError('PDF files are supported but require additional processing. Please convert to text or use a different format.')
-            return
-          } else if (selectedFile.type.includes('spreadsheet') || selectedFile.name.match(/\.(xls|xlsx|ods)$/i)) {
-            // For spreadsheets, extract text content
-            text = await selectedFile.text()
-            // You might want to add logic to parse CSV/Excel content
-          } else if (selectedFile.type.includes('presentation') || selectedFile.name.match(/\.(ppt|pptx|odp)$/i)) {
-            // For presentations, extract text content
-            text = await selectedFile.text()
-            // You might want to add logic to parse presentation content
-          } else {
-            // For text-based files (doc, docx, txt, md, etc.)
-            text = await selectedFile.text()
-          }
-          
-          if (!text.trim()) {
-            setError('The uploaded file appears to be empty or could not be read')
-            return
-          }
-        } catch (fileError) {
-          console.error('File reading error:', fileError)
-          setError('Failed to read the uploaded file. Please try a different file or convert to text format.')
-          return
-        }
+      // Truncate text if it's too long for the API
+      const truncatedText = truncateTextForAPI(textInput);
+      
+      // Debug: Show what text was extracted
+      console.log('🔍 DEBUG - Original text length:', textInput.length);
+      console.log('🔍 DEBUG - First 200 chars:', textInput.substring(0, 200));
+      console.log('🔍 DEBUG - Last 200 chars:', textInput.substring(Math.max(0, textInput.length - 200)));
+      
+      // Detect document type and get appropriate prompt
+      const docType = detectDocumentType(truncatedText);
+      const smartPrompt = getAppropriatePrompt(docType, customPrompt);
+      
+      // Show document type detection
+      if (docType === 'resume') {
+        setSuccess(`📄 Resume detected! Using specialized resume analysis prompt.`)
+        setTimeout(() => setSuccess(null), 3000)
+      } else if (docType === 'meeting') {
+        setSuccess(`📋 Meeting transcript detected! Using meeting summary prompt.`)
+        setTimeout(() => setSuccess(null), 3000)
       }
+      
+      // Show warning if text was truncated
+      if (truncatedText !== textInput) {
+        setSuccess(`⚠️ Document was ${textInput.length} characters. Truncated to ${truncatedText.length} characters for API processing.`)
+        setTimeout(() => setSuccess(null), 5000)
+      }
+      
+      // Debug: Show what's being sent to API
+      console.log('🔍 DEBUG - Text being sent to API:', truncatedText);
+      console.log('🔍 DEBUG - Prompt being used:', smartPrompt);
 
+      // Send text to API
       const response = await axios.post(`${API_BASE}/summaries/generate`, {
-        text,
-        customPrompt
+        text: truncatedText,
+        customPrompt: smartPrompt
       })
 
       setSuccess('Summary generated successfully!')
       setTextInput('')
-      setSelectedFile(null)
       setCustomPrompt('Summarize this meeting in clear, actionable bullet points')
       
       // Reload summaries
@@ -247,59 +310,7 @@ function App() {
     }
   }
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      // Check file size (10MB limit for larger documents)
-      if (file.size > 10 * 1024 * 1024) {
-        setError('File size must be less than 10MB')
-        return
-      }
-      
-      // Enhanced file type validation
-      const allowedTypes = [
-        // Text files
-        'text/plain',
-        'text/markdown',
-        'text/csv',
-        'text/html',
-        
-        // Microsoft Office documents
-        'application/msword', // .doc
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-        'application/vnd.ms-excel', // .xls
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        'application/vnd.ms-powerpoint', // .ppt
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-        
-        // PDF files
-        'application/pdf',
-        
-        // Rich text
-        'application/rtf',
-        'text/rtf',
-        
-        // OpenDocument formats
-        'application/vnd.oasis.opendocument.text', // .odt
-        'application/vnd.oasis.opendocument.spreadsheet', // .ods
-        'application/vnd.oasis.opendocument.presentation' // .odp
-      ]
-      
-      // Check if file type is allowed or if it has an allowed extension
-      const hasAllowedType = allowedTypes.includes(file.type)
-      const hasAllowedExtension = /\.(txt|md|csv|html|doc|docx|xls|xlsx|ppt|pptx|pdf|rtf|odt|ods|odp)$/i.test(file.name)
-      
-      if (!hasAllowedType && !hasAllowedExtension) {
-        setError('Please upload a supported file type: TXT, MD, CSV, HTML, DOC, DOCX, XLS, XLSX, PPT, PPTX, PDF, RTF, ODT, ODS, ODP')
-        return
-      }
-      
-      setSelectedFile(file)
-      setError(null)
-      setSuccess(`📁 File "${file.name}" uploaded successfully!`)
-      setTimeout(() => setSuccess(null), 3000)
-    }
-  }
+
 
   const filteredSummaries = summaries.filter(summary =>
     summary.generated_summary.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -431,81 +442,80 @@ function App() {
                   <div>
                     <label className="block text-sm font-semibold text-slate-200 mb-2">
                       Meeting Transcript
+                      {textInput && (
+                        <span className="ml-2 text-xs text-slate-400">
+                          ({textInput.length} characters)
+                        </span>
+                      )}
                     </label>
                     <textarea
                       value={textInput}
                       onChange={(e) => setTextInput(e.target.value)}
-                      placeholder="Paste your meeting transcript here..."
+                      placeholder="Paste your meeting transcript, resume, or any text content here..."
                       rows={6}
                       className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-slate-600 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all duration-200 bg-slate-700/50 backdrop-blur-sm text-slate-100 placeholder-slate-400 text-sm sm:text-base"
                     />
+                    {textInput.length > 8000 && (
+                      <p className="mt-2 text-sm text-amber-400">
+                        ⚠️ Document is quite long ({textInput.length} characters). It will be truncated to 8000 characters for processing.
+                      </p>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-200 mb-2">
-                      Upload Text File
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="file"
-                        accept=".txt,.md,.csv,.html,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,.rtf,.odt,.ods,.odp"
-                        onChange={handleFileUpload}
-                        id="file-upload"
-                        className="hidden"
-                      />
-                      <label
-                        htmlFor="file-upload"
-                        className="flex items-center justify-center w-full p-4 sm:p-6 border-2 border-dashed border-slate-600 rounded-lg sm:rounded-xl hover:border-amber-500 hover:bg-slate-700/50 transition-all duration-200 cursor-pointer group"
-                      >
-                        <div className="text-center">
-                          <Upload className="w-6 h-6 sm:w-8 sm:h-8 text-slate-400 group-hover:text-amber-400 mx-auto mb-2 transition-colors duration-200" />
-                          <p className="text-xs sm:text-sm font-medium text-slate-300 group-hover:text-amber-300">
-                            {selectedFile ? selectedFile.name : 'Click to upload or drag and drop'}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-1">TXT, MD, CSV, HTML, DOC, DOCX, XLS, XLSX, PPT, PPTX, PDF, RTF, ODT, ODS, ODP files up to 10MB</p>
-                        </div>
-                      </label>
-                      {selectedFile && (
-                        <button 
-                          onClick={() => setSelectedFile(null)}
-                          className="absolute top-2 right-2 p-1 bg-red-900/50 hover:bg-red-800/50 rounded-full transition-colors duration-200"
-                        >
-                          <X size={14} className="text-red-400" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
+
 
                   <div>
                     <label className="block text-sm font-semibold text-slate-200 mb-2">
                       Custom Instructions
+                      <span className="ml-2 text-xs text-slate-400">
+                        (Optional - AI will auto-detect document type)
+                      </span>
                     </label>
                     <textarea
                       value={customPrompt}
                       onChange={(e) => setCustomPrompt(e.target.value)}
-                      placeholder="How would you like the summary formatted?"
+                      placeholder="How would you like the summary formatted? (Leave empty for auto-detection)"
                       rows={3}
                       className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-slate-600 rounded-lg sm:rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all duration-200 bg-slate-700/50 backdrop-blur-sm text-slate-100 placeholder-slate-400 text-sm sm:text-base"
                     />
+
                   </div>
 
-                  <button
-                    onClick={generateSummary}
-                    disabled={loading || (!textInput.trim() && !selectedFile)}
-                    className="w-full py-3 sm:py-4 px-4 sm:px-6 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 disabled:from-slate-600 disabled:to-slate-700 text-white font-semibold rounded-lg sm:rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-sm sm:text-base"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 size={18} className="sm:w-5 sm:h-5 animate-spin" />
-                        <span>Generating Summary...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={18} className="sm:w-5 sm:h-5" />
-                        <span>Generate AI Summary</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={async () => {
+                        if (textInput.trim()) {
+                          const previewText = textInput.substring(0, 500) + (textInput.length > 500 ? '...' : '');
+                          setSuccess(`📄 Content Preview (first 500 chars):\n\n${previewText}`);
+                          setTimeout(() => setSuccess(null), 8000);
+                        } else {
+                          setError('Please enter some text to preview');
+                        }
+                      }}
+                      className="flex-1 py-3 sm:py-4 px-4 sm:px-6 bg-slate-600 hover:bg-slate-700 text-white font-semibold rounded-lg sm:rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center space-x-2 text-sm sm:text-base"
+                    >
+                      <FileText size={18} className="sm:w-5 sm:h-5" />
+                      <span>Preview Content</span>
+                    </button>
+                    
+                    <button
+                      onClick={generateSummary}
+                      disabled={loading || !textInput.trim()}
+                      className="flex-1 py-3 sm:py-4 px-4 sm:px-6 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 disabled:from-slate-600 disabled:to-slate-700 text-white font-semibold rounded-lg sm:rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-sm sm:text-base"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 size={18} className="sm:w-5 sm:h-5 animate-spin" />
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={18} className="sm:w-5 sm:h-5" />
+                          <span>Generate Summary</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
