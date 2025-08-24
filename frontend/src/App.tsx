@@ -9,7 +9,6 @@ FileText,
   Search,
   Clock,
   User,
-  Settings,
   CheckCircle,
   AlertCircle,
   Loader2,
@@ -31,13 +30,7 @@ interface Summary {
   updated_at: string
 }
 
-interface EmailLog {
-  id: number
-  summary_id: number
-  recipient_emails: string
-  sent_at: string
-  status: string
-}
+
 
 // API Configuration
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -196,7 +189,7 @@ Format as a well-structured professional summary suitable for job applications o
       console.log('🔍 DEBUG - Prompt being used:', smartPrompt);
 
       // Send text to API
-      const response = await axios.post(`${API_BASE}/summaries/generate`, {
+      await axios.post(`${API_BASE}/summaries/generate`, {
         text: truncatedText,
         customPrompt: smartPrompt
       })
